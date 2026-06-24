@@ -1,0 +1,23 @@
+# Binarios Go
+/bootstrap
+/out
+*.exe
+# binarios compilados de cada Lambda (cmd/*)
+/auth
+/products
+/reports
+/sales
+/users
+
+# Env (secretos)
+.env
+.env.*
+!.env.example
+
+# SAM
+.aws-sam/
+
+# OS
+.DS_Store
+
+env.json

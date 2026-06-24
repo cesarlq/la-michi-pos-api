@@ -1,0 +1,149 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: La Michi POS API - backend serverless (Go + Lambda contenedor + API Gateway HTTP)
+
+# Secretos/config inyectados al desplegar (sam deploy --parameter-overrides).
+# NoEcho oculta el valor en la consola de CloudFormation.
+Parameters:
+  DatabaseUrl:
+    Type: String
+    NoEcho: true
+    Description: Cadena de conexión a Postgres (RDS).
+  JwtSecret:
+    Type: String
+    NoEcho: true
+    Description: Secreto para firmar/verificar los JWT.
+
+# Config aplicada a TODAS las funciones.
+Globals:
+  Function:
+    Timeout: 15
+    MemorySize: 256
+    Architectures:
+      - arm64
+    Environment:
+      Variables:
+        DATABASE_URL: !Ref DatabaseUrl
+        JWT_SECRET: !Ref JwtSecret
+
+Resources:
+  # ─── Lambda: auth ───────────────────────────────────────────
+  # Imagen Docker: SAM la construye desde Dockerfile, la sube a ECR y crea
+  # el Lambda. {proxy+} captura /auth/login, /auth/me, etc. y chi enruta dentro.
+  AuthFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      Dockerfile: Dockerfile
+      DockerContext: .
+      DockerTag: auth-v1
+      DockerBuildArgs:
+        CMD_PATH: ./cmd/auth
+    Properties:
+      PackageType: Image
+      Events:
+        Auth:
+          Type: HttpApi
+          Properties:
+            Path: /auth/{proxy+}
+            Method: ANY
+        UsersRoot:
+          Type: HttpApi
+          Properties:
+            Path: /users
+            Method: ANY
+        Users:
+          Type: HttpApi
+          Properties:
+            Path: /users/{proxy+}
+            Method: ANY
+
+  # ─── Lambda: products ──────────────────────────────────────
+  ProductsFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      Dockerfile: Dockerfile
+      DockerContext: .
+      DockerTag: products-v1
+      DockerBuildArgs:
+        CMD_PATH: ./cmd/products
+    Properties:
+      PackageType: Image
+      Events:
+        # {proxy+} es greedy y exige ≥1 segmento → NO matchea el path raíz.
+        # Por eso cada recurso que sirve "/" necesita su evento de path desnudo.
+        ProductsRoot:
+          Type: HttpApi
+          Properties:
+            Path: /products
+            Method: ANY
+        Products:
+          Type: HttpApi
+          Properties:
+            Path: /products/{proxy+}
+            Method: ANY
+        BranchesRoot:
+          Type: HttpApi
+          Properties:
+            Path: /branches
+            Method: ANY
+        Branches:
+          Type: HttpApi
+          Properties:
+            Path: /branches/{proxy+}
+            Method: ANY
+        InventoryRoot:
+          Type: HttpApi
+          Properties:
+            Path: /inventory
+            Method: ANY
+        Inventory:
+          Type: HttpApi
+          Properties:
+            Path: /inventory/{proxy+}
+            Method: ANY
+
+  # ─── Lambda: sales ─────────────────────────────────────────
+  SalesFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      Dockerfile: Dockerfile
+      DockerContext: .
+      DockerTag: sales-v1
+      DockerBuildArgs:
+        CMD_PATH: ./cmd/sales
+    Properties:
+      PackageType: Image
+      Events:
+        SalesRoot:
+          Type: HttpApi
+          Properties:
+            Path: /sales
+            Method: ANY
+        Sales:
+          Type: HttpApi
+          Properties:
+            Path: /sales/{proxy+}
+            Method: ANY
+
+  # ─── Lambda: reports ────────────────────────────────────────
+  ReportsFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      Dockerfile: Dockerfile
+      DockerContext: .
+      DockerTag: reports-v1
+      DockerBuildArgs:
+        CMD_PATH: ./cmd/reports
+    Properties:
+      PackageType: Image
+      Events:
+        Reports:
+          Type: HttpApi
+          Properties:
+            Path: /reports/{proxy+}
+            Method: ANY
+
+Outputs:
+  ApiBaseUrl:
+    Description: URL base del API (API Gateway HTTP).
+    Value: !Sub https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com

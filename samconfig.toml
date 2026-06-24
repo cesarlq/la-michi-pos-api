@@ -1,0 +1,12 @@
+version = 0.1
+
+[default.deploy.parameters]
+stack_name = "lamichi-pos-api"
+resolve_s3 = true
+s3_prefix = "lamichi-pos-api"
+region = "us-east-1"
+capabilities = "CAPABILITY_IAM"
+image_repositories = ["AuthFunction=638298051586.dkr.ecr.us-east-1.amazonaws.com/lamichiposapif0c61181/authfunctiona88a6b13repo", "ProductsFunction=638298051586.dkr.ecr.us-east-1.amazonaws.com/lamichiposapif0c61181/productsfunctionb39cab68repo", "SalesFunction=638298051586.dkr.ecr.us-east-1.amazonaws.com/lamichiposapif0c61181/salesfunctionda94ba41repo", "ReportsFunction=638298051586.dkr.ecr.us-east-1.amazonaws.com/lamichiposapif0c61181/reportsfunction9ccc10darepo"]
+
+[default.global.parameters]
+region = "us-east-1"

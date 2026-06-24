@@ -1,0 +1,28 @@
+version: "2"
+sql:
+  - engine: postgresql
+    # sqlc lee el DDL de las migraciones para conocer las tablas/tipos.
+    schema: migrations
+    queries: internal/db/queries
+    gen:
+      go:
+        package: db
+        out: internal/db
+        sql_package: pgx/v5
+        emit_json_tags: true
+        emit_pointers_for_null_types: true # columnas NULL → *T (ej. branch_id → *string)
+        overrides:
+          # UUID como string → JSON/DTO limpios, pgx lo escanea sin fricción.
+          - db_type: "uuid"
+            go_type: "string"
+          - db_type: "uuid"
+            nullable: true
+            go_type:
+              type: "string"
+              pointer: true
+          - db_type: "timestamptz"
+            go_type: "time.Time"
+          # NUMERIC como string (dinero exacto, sin floats). Se parsea en el
+          # service de ventas cuando haga aritmética.
+          - db_type: "pg_catalog.numeric"
+            go_type: "string"

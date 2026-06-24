@@ -1,0 +1,24 @@
+# Postgres local para el API. El back es dueño de su propia BD.
+# Puerto 5433 en el host para coexistir con el Postgres del front (5432)
+# durante la migración. Dentro del contenedor sigue siendo 5432.
+services:
+  db:
+    image: postgres:16
+    container_name: lamichi-api-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: lamichi
+      POSTGRES_PASSWORD: lamichi_dev
+      POSTGRES_DB: lamichi_pos
+    ports:
+      - "5433:5432"
+    volumes:
+      - lamichi_api_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lamichi -d lamichi_pos"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  lamichi_api_pgdata:
