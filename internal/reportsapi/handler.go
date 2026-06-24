@@ -28,6 +28,7 @@ func (h *Handler) Routes() http.Handler {
 	r.Use(web.Authenticator(h.token))
 
 	r.Get("/daily", h.daily)
+	r.Get("/sales-trend", h.salesTrend)
 	r.Get("/top-products", h.topProducts)
 	r.Get("/critical-stock", h.criticalStock)
 
@@ -68,6 +69,35 @@ func (h *Handler) daily(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		web.Error(w, http.StatusInternalServerError, "Error al obtener resumen del día")
+		return
+	}
+	web.JSON(w, http.StatusOK, dto)
+}
+
+// salesTrend — GET /reports/sales-trend?days=7&branch_id=xxx
+// Devuelve una serie de ingresos/ventas por día (incluye días en cero).
+func (h *Handler) salesTrend(w http.ResponseWriter, r *http.Request) {
+	claims := web.UserFromContext(r.Context())
+
+	days := 7
+	if v := r.URL.Query().Get("days"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n <= 0 || n > 90 {
+			web.Error(w, http.StatusBadRequest, "El parámetro days debe ser un número entre 1 y 90")
+			return
+		}
+		days = n
+	}
+
+	// Construimos `days` cubetas: desde (hoy - days + 1) hasta hoy, todo a inicio de día UTC.
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+	dto, err := h.svc.SalesTrend(r.Context(), SalesTrendFilters{
+		DateFrom: today.AddDate(0, 0, -(days - 1)),
+		DateTo:   today,
+		BranchID: resolveBranch(claims, r),
+	})
+	if err != nil {
+		web.Error(w, http.StatusInternalServerError, "Error al obtener la tendencia de ventas")
 		return
 	}
 	web.JSON(w, http.StatusOK, dto)

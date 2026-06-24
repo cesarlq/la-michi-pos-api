@@ -14,6 +14,11 @@ type fakeQuerier struct {
 	summaryRow   db.DailySummaryRow
 	topRows      []db.TopProductsRow
 	criticalRows []db.CriticalStockRow
+	trendRows    []db.SalesTrendRow
+}
+
+func (f *fakeQuerier) SalesTrend(_ context.Context, _ db.SalesTrendParams) ([]db.SalesTrendRow, error) {
+	return f.trendRows, nil
 }
 
 func (f *fakeQuerier) DailySummary(_ context.Context, _ db.DailySummaryParams) (db.DailySummaryRow, error) {
@@ -192,5 +197,51 @@ func TestCriticalStock_Empty(t *testing.T) {
 	}
 	if len(dto) != 0 {
 		t.Errorf("len = %d, quería 0 (sin stock crítico)", len(dto))
+	}
+}
+
+// ── SalesTrend ────────────────────────────────────────────────────────────────
+
+func TestSalesTrend_OK(t *testing.T) {
+	day1 := time.Date(2026, 6, 20, 0, 0, 0, 0, time.UTC)
+	day2 := time.Date(2026, 6, 21, 0, 0, 0, 0, time.UTC)
+	q := &fakeQuerier{
+		trendRows: []db.SalesTrendRow{
+			{Day: day1, SaleCount: 3, TotalRevenue: "150.50"},
+			{Day: day2, SaleCount: 0, TotalRevenue: "0"}, // día sin ventas → cero
+		},
+	}
+	svc := newSvc(q)
+
+	dto, err := svc.SalesTrend(context.Background(), SalesTrendFilters{
+		DateFrom: day1, DateTo: day2,
+	})
+	if err != nil {
+		t.Fatalf("err inesperado: %v", err)
+	}
+	if len(dto) != 2 {
+		t.Fatalf("len = %d, quería 2", len(dto))
+	}
+	if dto[0].Date != "2026-06-20" {
+		t.Errorf("Date[0] = %q, quería 2026-06-20", dto[0].Date)
+	}
+	if dto[0].TotalRevenue != 150.5 {
+		t.Errorf("TotalRevenue[0] = %v, quería 150.5", dto[0].TotalRevenue)
+	}
+	if dto[1].SaleCount != 0 || dto[1].TotalRevenue != 0 {
+		t.Errorf("día sin ventas debe ser cero, fue count=%d rev=%v", dto[1].SaleCount, dto[1].TotalRevenue)
+	}
+}
+
+func TestSalesTrend_Empty(t *testing.T) {
+	q := &fakeQuerier{trendRows: nil}
+	svc := newSvc(q)
+
+	dto, err := svc.SalesTrend(context.Background(), SalesTrendFilters{})
+	if err != nil {
+		t.Fatalf("err inesperado: %v", err)
+	}
+	if len(dto) != 0 {
+		t.Errorf("len = %d, quería 0", len(dto))
 	}
 }

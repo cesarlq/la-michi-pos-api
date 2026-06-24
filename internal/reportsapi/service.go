@@ -15,6 +15,7 @@ type querier interface {
 	DailySummary(ctx context.Context, arg db.DailySummaryParams) (db.DailySummaryRow, error)
 	TopProducts(ctx context.Context, arg db.TopProductsParams) ([]db.TopProductsRow, error)
 	CriticalStock(ctx context.Context, branchID *string) ([]db.CriticalStockRow, error)
+	SalesTrend(ctx context.Context, arg db.SalesTrendParams) ([]db.SalesTrendRow, error)
 }
 
 // DTOs ─────────────────────────────────────────────────────────────────────────
@@ -31,6 +32,12 @@ type TopProductDTO struct {
 	ProductName  string  `json:"productName"`
 	Category     string  `json:"category"`
 	TotalQty     int     `json:"totalQty"`
+	TotalRevenue float64 `json:"totalRevenue"`
+}
+
+type SalesTrendPointDTO struct {
+	Date         string  `json:"date"` // YYYY-MM-DD
+	SaleCount    int     `json:"saleCount"`
 	TotalRevenue float64 `json:"totalRevenue"`
 }
 
@@ -56,6 +63,12 @@ type TopProductsFilters struct {
 	DateTo   time.Time
 	BranchID *string
 	Limit    int
+}
+
+type SalesTrendFilters struct {
+	DateFrom time.Time
+	DateTo   time.Time
+	BranchID *string
 }
 
 type CriticalStockFilters struct {
@@ -129,6 +142,33 @@ func (s *Service) TopProducts(ctx context.Context, f TopProductsFilters) ([]TopP
 			ProductName:  r.ProductName,
 			Category:     r.Category,
 			TotalQty:     int(r.TotalQty),
+			TotalRevenue: rev,
+		})
+	}
+	return out, nil
+}
+
+// SalesTrend devuelve los ingresos y número de ventas por día en el rango dado.
+// Incluye días sin ventas (en cero) para una gráfica de línea sin huecos.
+func (s *Service) SalesTrend(ctx context.Context, f SalesTrendFilters) ([]SalesTrendPointDTO, error) {
+	rows, err := s.q.SalesTrend(ctx, db.SalesTrendParams{
+		DateFrom: f.DateFrom,
+		DateTo:   f.DateTo,
+		BranchID: f.BranchID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("SalesTrend query: %w", err)
+	}
+
+	out := make([]SalesTrendPointDTO, 0, len(rows))
+	for _, r := range rows {
+		rev, err := strconv.ParseFloat(r.TotalRevenue, 64)
+		if err != nil {
+			return nil, fmt.Errorf("parseFloat revenue for %s: %w", r.Day.Format("2006-01-02"), err)
+		}
+		out = append(out, SalesTrendPointDTO{
+			Date:         r.Day.UTC().Format("2006-01-02"),
+			SaleCount:    int(r.SaleCount),
 			TotalRevenue: rev,
 		})
 	}

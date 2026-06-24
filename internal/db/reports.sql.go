@@ -104,6 +104,60 @@ func (q *Queries) DailySummary(ctx context.Context, arg DailySummaryParams) (Dai
 	return i, err
 }
 
+const salesTrend = `-- name: SalesTrend :many
+SELECT
+  d::timestamptz                   AS day,
+  COALESCE(COUNT(s.id), 0)::int    AS sale_count,
+  COALESCE(SUM(s.total), 0)::text  AS total_revenue
+FROM generate_series(
+       $1::timestamptz,
+       $2::timestamptz,
+       interval '1 day'
+     ) AS d
+LEFT JOIN sales s
+  ON s.created_at >= d
+  AND s.created_at <  d + interval '1 day'
+  AND s.status = 'completed'
+  AND ($3::uuid IS NULL OR s.branch_id = $3)
+GROUP BY d
+ORDER BY d
+`
+
+type SalesTrendParams struct {
+	DateFrom time.Time `json:"date_from"`
+	DateTo   time.Time `json:"date_to"`
+	BranchID *string   `json:"branch_id"`
+}
+
+type SalesTrendRow struct {
+	Day          time.Time `json:"day"`
+	SaleCount    int32     `json:"sale_count"`
+	TotalRevenue string    `json:"total_revenue"`
+}
+
+// Ingresos y número de ventas por día en el rango [date_from, date_to].
+// generate_series produce una fila por día; el LEFT JOIN rellena con 0 los
+// días sin ventas para que la gráfica de línea no tenga huecos.
+func (q *Queries) SalesTrend(ctx context.Context, arg SalesTrendParams) ([]SalesTrendRow, error) {
+	rows, err := q.db.Query(ctx, salesTrend, arg.DateFrom, arg.DateTo, arg.BranchID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SalesTrendRow
+	for rows.Next() {
+		var i SalesTrendRow
+		if err := rows.Scan(&i.Day, &i.SaleCount, &i.TotalRevenue); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const topProducts = `-- name: TopProducts :many
 SELECT
   si.product_id,

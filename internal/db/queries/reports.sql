@@ -33,6 +33,27 @@ GROUP BY si.product_id, si.product_name, p.category
 ORDER BY total_qty DESC
 LIMIT sqlc.arg('lim');
 
+-- name: SalesTrend :many
+-- Ingresos y número de ventas por día en el rango [date_from, date_to].
+-- generate_series produce una fila por día; el LEFT JOIN rellena con 0 los
+-- días sin ventas para que la gráfica de línea no tenga huecos.
+SELECT
+  d::timestamptz                   AS day,
+  COALESCE(COUNT(s.id), 0)::int    AS sale_count,
+  COALESCE(SUM(s.total), 0)::text  AS total_revenue
+FROM generate_series(
+       sqlc.arg('date_from')::timestamptz,
+       sqlc.arg('date_to')::timestamptz,
+       interval '1 day'
+     ) AS d
+LEFT JOIN sales s
+  ON s.created_at >= d
+  AND s.created_at <  d + interval '1 day'
+  AND s.status = 'completed'
+  AND (sqlc.narg('branch_id')::uuid IS NULL OR s.branch_id = sqlc.narg('branch_id'))
+GROUP BY d
+ORDER BY d;
+
 -- name: CriticalStock :many
 -- Productos cuyo stock actual está en o por debajo del mínimo.
 SELECT
