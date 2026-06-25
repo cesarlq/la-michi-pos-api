@@ -114,6 +114,31 @@ func (s *Service) DailySummary(ctx context.Context, f DailyFilters) (DailySummar
 	}, nil
 }
 
+// Summary devuelve el resumen agregado de ventas en un rango [DateFrom, DateTo).
+// DateTo es exclusivo (lo prepara el handler). Sirve para semana/mes/año/personalizado.
+func (s *Service) Summary(ctx context.Context, f SalesTrendFilters) (DailySummaryDTO, error) {
+	row, err := s.q.DailySummary(ctx, db.DailySummaryParams{
+		DateFrom: f.DateFrom,
+		DateTo:   f.DateTo,
+		BranchID: f.BranchID,
+	})
+	if err != nil {
+		return DailySummaryDTO{}, fmt.Errorf("Summary query: %w", err)
+	}
+
+	revenue, err := strconv.ParseFloat(row.TotalRevenue, 64)
+	if err != nil {
+		return DailySummaryDTO{}, fmt.Errorf("parseFloat revenue: %w", err)
+	}
+
+	return DailySummaryDTO{
+		Date:         f.DateFrom.Format("2006-01-02"),
+		SaleCount:    int(row.SaleCount),
+		TotalRevenue: revenue,
+		ItemsSold:    int(row.ItemsSold),
+	}, nil
+}
+
 // TopProducts devuelve los N productos más vendidos en el rango de fechas.
 func (s *Service) TopProducts(ctx context.Context, f TopProductsFilters) ([]TopProductDTO, error) {
 	limit := f.Limit

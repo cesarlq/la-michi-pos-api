@@ -28,11 +28,34 @@ func (h *Handler) Routes() http.Handler {
 	r.Use(web.Authenticator(h.token))
 
 	r.Get("/daily", h.daily)
+	r.Get("/summary", h.summary)
 	r.Get("/sales-trend", h.salesTrend)
 	r.Get("/top-products", h.topProducts)
 	r.Get("/critical-stock", h.criticalStock)
 
 	return r
+}
+
+// parseRange lee from/to (YYYY-MM-DD) del query y devuelve [from, to] como inicio
+// de día UTC, con `to` inclusivo. Si faltan, usa los últimos defaultDays días.
+func parseRange(r *http.Request, defaultDays int) (from, to time.Time, err error) {
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+	qf, qt := r.URL.Query().Get("from"), r.URL.Query().Get("to")
+	if qf == "" || qt == "" {
+		return today.AddDate(0, 0, -(defaultDays - 1)), today, nil
+	}
+	if from, err = time.Parse("2006-01-02", qf); err != nil {
+		return
+	}
+	if to, err = time.Parse("2006-01-02", qt); err != nil {
+		return
+	}
+	from = from.UTC().Truncate(24 * time.Hour)
+	to = to.UTC().Truncate(24 * time.Hour)
+	if to.Before(from) {
+		from, to = to, from
+	}
+	return from, to, nil
 }
 
 // resolveBranch devuelve el branch_id efectivo según el rol:
@@ -74,26 +97,47 @@ func (h *Handler) daily(w http.ResponseWriter, r *http.Request) {
 	web.JSON(w, http.StatusOK, dto)
 }
 
-// salesTrend — GET /reports/sales-trend?days=7&branch_id=xxx
-// Devuelve una serie de ingresos/ventas por día (incluye días en cero).
+// summary — GET /reports/summary?from=2026-06-01&to=2026-06-30&branch_id=xxx
+// Resumen agregado del periodo (ventas, ingresos, unidades). Default: hoy.
+func (h *Handler) summary(w http.ResponseWriter, r *http.Request) {
+	claims := web.UserFromContext(r.Context())
+
+	from, to, err := parseRange(r, 1)
+	if err != nil {
+		web.Error(w, http.StatusBadRequest, "Formato de fecha inválido. Use YYYY-MM-DD")
+		return
+	}
+
+	dto, err := h.svc.Summary(r.Context(), SalesTrendFilters{
+		DateFrom: from,
+		DateTo:   to.Add(24 * time.Hour), // exclusivo: incluye el día `to`
+		BranchID: resolveBranch(claims, r),
+	})
+	if err != nil {
+		web.Error(w, http.StatusInternalServerError, "Error al obtener el resumen")
+		return
+	}
+	web.JSON(w, http.StatusOK, dto)
+}
+
+// salesTrend — GET /reports/sales-trend?from=&to=&branch_id=xxx
+// Serie de ingresos/ventas por día (incluye días en cero). Default: últimos 7 días.
 func (h *Handler) salesTrend(w http.ResponseWriter, r *http.Request) {
 	claims := web.UserFromContext(r.Context())
 
-	days := 7
-	if v := r.URL.Query().Get("days"); v != "" {
-		n, err := strconv.Atoi(v)
-		if err != nil || n <= 0 || n > 90 {
-			web.Error(w, http.StatusBadRequest, "El parámetro days debe ser un número entre 1 y 90")
-			return
-		}
-		days = n
+	from, to, err := parseRange(r, 7)
+	if err != nil {
+		web.Error(w, http.StatusBadRequest, "Formato de fecha inválido. Use YYYY-MM-DD")
+		return
+	}
+	if to.Sub(from) > 366*24*time.Hour {
+		web.Error(w, http.StatusBadRequest, "El rango no puede exceder 366 días")
+		return
 	}
 
-	// Construimos `days` cubetas: desde (hoy - days + 1) hasta hoy, todo a inicio de día UTC.
-	today := time.Now().UTC().Truncate(24 * time.Hour)
 	dto, err := h.svc.SalesTrend(r.Context(), SalesTrendFilters{
-		DateFrom: today.AddDate(0, 0, -(days - 1)),
-		DateTo:   today,
+		DateFrom: from,
+		DateTo:   to, // generate_series usa endpoints inclusivos
 		BranchID: resolveBranch(claims, r),
 	})
 	if err != nil {
@@ -103,18 +147,14 @@ func (h *Handler) salesTrend(w http.ResponseWriter, r *http.Request) {
 	web.JSON(w, http.StatusOK, dto)
 }
 
-// topProducts — GET /reports/top-products?days=7&limit=10&branch_id=xxx
+// topProducts — GET /reports/top-products?from=&to=&limit=10&branch_id=xxx
 func (h *Handler) topProducts(w http.ResponseWriter, r *http.Request) {
 	claims := web.UserFromContext(r.Context())
 
-	days := 7
-	if v := r.URL.Query().Get("days"); v != "" {
-		n, err := strconv.Atoi(v)
-		if err != nil || n <= 0 || n > 365 {
-			web.Error(w, http.StatusBadRequest, "El parámetro days debe ser un número entre 1 y 365")
-			return
-		}
-		days = n
+	from, to, err := parseRange(r, 7)
+	if err != nil {
+		web.Error(w, http.StatusBadRequest, "Formato de fecha inválido. Use YYYY-MM-DD")
+		return
 	}
 
 	limit := 10
@@ -127,10 +167,9 @@ func (h *Handler) topProducts(w http.ResponseWriter, r *http.Request) {
 		limit = n
 	}
 
-	now := time.Now().UTC()
 	dto, err := h.svc.TopProducts(r.Context(), TopProductsFilters{
-		DateFrom: now.AddDate(0, 0, -days).Truncate(24 * time.Hour),
-		DateTo:   now,
+		DateFrom: from,
+		DateTo:   to.Add(24 * time.Hour), // exclusivo: incluye el día `to`
 		BranchID: resolveBranch(claims, r),
 		Limit:    limit,
 	})

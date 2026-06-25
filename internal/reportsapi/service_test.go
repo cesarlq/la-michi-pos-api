@@ -200,6 +200,31 @@ func TestCriticalStock_Empty(t *testing.T) {
 	}
 }
 
+// ── Summary (rango) ─────────────────────────────────────────────────────────
+
+func TestSummary_Range(t *testing.T) {
+	q := &fakeQuerier{
+		summaryRow: db.DailySummaryRow{SaleCount: 12, TotalRevenue: "1500.50", ItemsSold: 40},
+	}
+	svc := newSvc(q)
+
+	from := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	to := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
+	dto, err := svc.Summary(context.Background(), SalesTrendFilters{DateFrom: from, DateTo: to})
+	if err != nil {
+		t.Fatalf("err inesperado: %v", err)
+	}
+	if dto.SaleCount != 12 {
+		t.Errorf("SaleCount = %d, quería 12", dto.SaleCount)
+	}
+	if dto.TotalRevenue != 1500.5 {
+		t.Errorf("TotalRevenue = %v, quería 1500.5", dto.TotalRevenue)
+	}
+	if dto.ItemsSold != 40 {
+		t.Errorf("ItemsSold = %d, quería 40", dto.ItemsSold)
+	}
+}
+
 // ── SalesTrend ────────────────────────────────────────────────────────────────
 
 func TestSalesTrend_OK(t *testing.T) {
